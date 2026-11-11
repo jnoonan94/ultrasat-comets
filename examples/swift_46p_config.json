@@ -1,0 +1,15 @@
+{
+  "candidates": ["46P"],
+  "use_sb_ident": true,
+  "fixed_radii": [5000, 10000, 20000, 40000],
+  "fixed_unit": "km",
+  "iter_start": 3.0,
+  "iter_step": 3.0,
+  "iter_max": 150.0,
+  "iter_unit": "arcsec",
+  "iter_tol": 0.01,
+  "iter_n_converge": 3,
+  "background": {"method": "annulus", "r_in": 450, "r_out": 550, "unit": "arcsec"},
+  "recenter_box_arcsec": 10.0,
+  "max_shift_arcsec": 20.0
+}

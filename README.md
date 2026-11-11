@@ -150,3 +150,67 @@ Observer location (hardcoded in `api_query()`):
 - Moon position in `gen_total_observability()` is incorrectly computed using `get_sun()` (copy-paste bug on line 429).
 - Observer location assumes a fixed geostationary sub-satellite point; actual UltraSat pointing constraints are more complex.
 - No `requirements.txt` is provided; see the Installation section above.
+
+---
+
+## Comet test bench (`comet_testbench/`)
+
+A test bench for the OH cometary pipeline using public Swift/UVOT images. It is
+instrument- and filter-agnostic: anything with a celestial WCS, an observation
+time and an exposure time can be fed in; instrument specifics live in small
+adapter classes (`comet_testbench/instruments.py`).
+
+What it does, per image extension:
+
+1. **Find comets in the field** (`field_search.find_comets`). Candidates come from
+   the header `OBJECT` keyword, a user list, and a JPL sb_ident query over the
+   image footprint (reusing `sbdb_ident_query.param_build`). Each candidate is
+   placed with a Horizons ephemeris *for the actual observer* (Swift is
+   `500@-128485`; geocentric parallax is ~1 arcmin for a comet at 0.1 au) and kept
+   only if it lands on exposed pixels.
+2. **Aperture photometry** (`photometry.py`) on the count-rate image: fixed
+   apertures in pix, arcsec or km at the comet, and an iterative mode that
+   recentres on the coma and grows the aperture until the flux converges,
+   recording the growth curve. UVOT images get a pixel-level coincidence-loss
+   correction (Poole et al. 2008).
+3. **OH hand-off** (`oh.py`). Pairs UVW1 and V measurements of the same comet,
+   forms `OH = UVW1 - beta * V`, converts to an OH band flux, and fits a
+   production rate with any model object that implements
+   `aperture_flux(production_rate, radius_km, geometry)`. The OH model itself is
+   developed separately; see `examples/toy_oh_model.py` for the interface.
+
+### Quick start
+
+```bash
+pip install -e .[test]
+
+# Download UVW1 and V images of 46P/Wirtanen from HEASARC
+python -m comet_testbench fetch '%WIRTANEN%' --start 2018-11-28 --stop 2018-12-31 --dest data/swift
+
+# Find comets and measure them; writes CSVs to results/
+python -m comet_testbench run data/swift/*/*_sk.img.gz --config examples/swift_46p_config.json --out results
+
+# With the OH step (beta and the OH count-rate-to-flux factor come from your calibration)
+python -m comet_testbench run data/swift/*/*_sk.img.gz --beta <beta> --oh-conversion <factor> \
+    --oh-model your_oh_package.module:Model
+```
+
+Outputs: `comets.csv` (one row per comet per frame, with geometry, trail length
+and growth-curve status), `fixed_apertures.csv`, `growth_curves.csv`, and, when the
+OH step runs, `oh_fluxes.csv` and `production_rates.csv`.
+
+### Tests
+
+`pytest` runs the offline suite on synthetic comet images. `pytest -m network`
+runs a live check that downloads a Swift UVW1 image of 46P and confirms the
+comet is found within a few pixels of the Horizons prediction.
+
+### Caveats
+
+- UVOT zero points and flux factors in `instruments.py` are from Poole et al.
+  (2008) / Breeveld et al. (2011); verify against the current CALDB.
+- Each snapshot is measured separately; the comet's motion during an exposure is
+  reported (`trail_pix`) but not corrected.
+- Swift target names are not always reliable: two archive visits labelled
+  `COMET41P` (obsids 00093389002/003) point at the Galactic Centre, and the bench
+  correctly reports no comet in them.
