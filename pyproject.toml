@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ultrasat-comets"
+version = "0.1.0"
+description = "UltraSat comet observability tools and the Swift comet test bench"
+requires-python = ">=3.9"
+dependencies = ["astropy>=5.0", "numpy", "scipy", "photutils>=1.5", "pandas", "matplotlib", "requests"]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[tool.setuptools]
+py-modules = ["sbdb_ident_query", "ultrasat_object_search"]
+packages = ["comet_testbench"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["network: needs HEASARC and JPL network access (deselected by default)"]
+addopts = "-m 'not network'"
