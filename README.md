@@ -179,6 +179,37 @@ What it does, per image extension:
    `aperture_flux(production_rate, radius_km, geometry)`. The OH model itself is
    developed separately; see `examples/toy_oh_model.py` for the interface.
 
+### Same search for simulated pointings and real images
+
+`comet_testbench/pointing.py` turns a field-of-regard pointing into a *virtual
+frame*: a WCS built from the pointing centre, roll and the 20° × 10° field the
+simulator uses. Virtual frames and downlinked FITS images both go through
+`find_comets`, so the method used to plan the survey is the one used on the
+data. Only the input changes.
+
+```python
+from astropy.time import Time
+import ultrasat_object_search as uos
+from comet_testbench import search_pointings
+
+fovs = uos.retrieve_fov_array()                      # LCS grid, "ra dec" strings
+rows = search_pointings(fovs, [Time("2025-03-01")],  # one row per comet per pointing
+                        vmag_lim=18, no_magnitude="none")   # = simulator's selection
+```
+
+The UltraSat observer defaults to the simulator's site (35,785 km above
+32.03°N, 34.90°E) for both sb_ident and Horizons (`UltraSat` adapter). Pass
+`horizons_id` once the spacecraft has a Horizons ephemeris. Differences from
+`ultrasat_object_search.py` that are deliberate:
+
+| | simulator | test bench |
+|---|---|---|
+| field | RA/Dec box (`fov-ra-lim`, `fov-dec-lim`) | true footprint from the WCS, then a per-pixel check |
+| comets with no magnitude model | dropped (`mag-required=true`) | numbered periodic comets kept (`no_magnitude="periodic"`); `"none"` matches the simulator |
+| positions | sb_ident second pass | sb_ident, or Horizons for the real observer (`refine_with_horizons`) |
+| Sun / Moon / latitude cuts | applied, rows dropped | reported as flags per comet |
+| JPL rate limiting | loop stops | waits for `Retry-After` and retries |
+
 ### Quick start
 
 ```bash
