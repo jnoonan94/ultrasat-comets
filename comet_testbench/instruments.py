@@ -38,6 +38,10 @@ class InstrumentAdapter:
         """MPC observatory code used for the sb_ident discovery query."""
         return self._mpc_code
 
+    def sb_ident_site(self, frame: ImageFrame):
+        """(lat_deg, lon_deg, alt_km) for sb_ident, or None to use the MPC code."""
+        return None
+
     # --- radiometry -------------------------------------------------------
     def count_rate_image(self, frame: ImageFrame) -> np.ndarray:
         """Image in counts/s per pixel.
@@ -159,7 +163,41 @@ class SwiftUVOT(InstrumentAdapter):
         return f.zero_point_vega if f else None
 
 
-DEFAULT_ADAPTERS = (SwiftUVOT(),)
+# Observer used by the field-of-regard simulator (ultrasat_object_search.api_query):
+# a site 35,785 km above (32.02814 N, 34.89832 E).
+ULTRASAT_SIM_SITE = (32.028140, 34.898320, 35785.0)
+
+
+class UltraSat(InstrumentAdapter):
+    """UltraSat images, real or simulated (see :mod:`comet_testbench.pointing`).
+
+    Until UltraSat has an ephemeris in Horizons the observer defaults to the
+    same site the field-of-regard simulator uses, so simulated and real
+    searches agree. Pass ``horizons_id`` (e.g. ``'500@-NNNNNN'``) once the
+    spacecraft is in Horizons; sb_ident still uses ``site`` for discovery.
+    """
+
+    name = "ultrasat"
+
+    def __init__(self, site=ULTRASAT_SIM_SITE, horizons_id=None):
+        super().__init__()
+        self.site = tuple(site)
+        self.horizons_id = horizons_id
+
+    def matches(self, frame: ImageFrame) -> bool:
+        return "ULTRASAT" in str(frame.header.get("TELESCOP", "")).upper()
+
+    def observer(self, frame):
+        if self.horizons_id:
+            return self.horizons_id
+        lat, lon, alt = self.site
+        return f"site:{lon},{lat},{alt}"
+
+    def sb_ident_site(self, frame):
+        return self.site
+
+
+DEFAULT_ADAPTERS = (SwiftUVOT(), UltraSat())
 
 
 def adapter_for(frame: ImageFrame, adapters=DEFAULT_ADAPTERS) -> InstrumentAdapter:

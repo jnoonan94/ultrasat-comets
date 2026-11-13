@@ -109,13 +109,38 @@ def horizons_command(designation: str) -> str:
 # Horizons
 # --------------------------------------------------------------------------
 
-def _get(url, params, session=None, timeout=120):
+def _get(url, params, session=None, timeout=120, retries=5):
+    """GET JSON from a JPL API, backing off when the service rate-limits.
+
+    sb_ident answers a burst of requests (a field-of-regard loop) with HTTP
+    429 / "Rate limit exceeded"; wait and retry rather than fail the loop.
+    """
+    import time
     import requests
 
     getter = session.get if session is not None else requests.get
-    r = getter(url, params=params, timeout=timeout)
-    r.raise_for_status()
-    return r.json()
+    delay = 2.0
+    for attempt in range(retries + 1):
+        r = getter(url, params=params, timeout=timeout)
+        limited = r.status_code in (429, 503) or (
+            r.status_code == 200 and "rate limit" in r.text[:300].lower())
+        if limited and attempt < retries:
+            try:
+                wait = min(float(r.headers.get("Retry-After", delay)), 900.0)
+            except ValueError:
+                wait = delay
+            time.sleep(max(wait, delay))
+            delay *= 2
+            continue
+        r.raise_for_status()
+        return r.json()
+
+
+def _center_params(observer: str) -> dict:
+    if observer.startswith("site:"):
+        return {"CENTER": "'coord@399'", "COORD_TYPE": "GEODETIC",
+                "SITE_COORD": f"'{observer[5:]}'"}
+    return {"CENTER": f"'{observer}'"}
 
 
 def query_horizons(designation: str, times: Time, observer: str = "500@399",
@@ -130,7 +155,10 @@ def query_horizons(designation: str, times: Time, observer: str = "500@399",
         Scalar or array of times (any scale; converted to UTC JD).
     observer : str
         Horizons CENTER, e.g. ``'500@399'`` (geocenter), ``'500@-128485'``
-        (Swift spacecraft) or an MPC code such as ``'568'``.
+        (Swift spacecraft) or an MPC code such as ``'568'``. A site above the
+        Earth can be given as ``'site:lon_deg,lat_deg,alt_km'`` (geodetic),
+        which is how the UltraSat field-of-regard simulations place the
+        observer.
 
     Returns
     -------
@@ -143,7 +171,7 @@ def query_horizons(designation: str, times: Time, observer: str = "500@399",
         "format": "json",
         "COMMAND": horizons_command(designation),
         "EPHEM_TYPE": "OBSERVER",
-        "CENTER": f"'{observer}'",
+        **_center_params(observer),
         "TLIST": f"'{tlist}'",
         "TLIST_TYPE": "JD",
         "TIME_TYPE": "UT",
@@ -206,34 +234,93 @@ def _sexagesimal(value_deg: float, hours: bool) -> str:
     return f"{sign}{d:02d}-{m:02d}-{s:04.1f}"
 
 
-def sb_ident_comets(ra_center: float, dec_center: float, ra_hwidth: float, dec_hwidth: float,
-                    time: Time, mpc_code: str = "500", vmag_lim: float = 30.0,
-                    session=None) -> list:
-    """Comet designations that JPL sb_ident places inside a rectangular field.
+@dataclass
+class SbIdentRecord:
+    """One comet from an sb_ident query (second-pass, n-body positions)."""
 
-    Reuses ``sbdb_ident_query.param_build`` (comet classes only) with a
-    centre/half-width field. Widths are in degrees. Returns a list of
-    designations normalised with :func:`normalize_designation`.
+    designation: str
+    name: str
+    ra: float  # deg
+    dec: float  # deg
+    vmag: float  # NaN when sb_ident has no magnitude model for the comet
+    ra_rate: float = float("nan")  # arcsec/hour
+    dec_rate: float = float("nan")
+
+
+def _parse_sb_ident_row(row) -> Optional[SbIdentRecord]:
+    des = normalize_designation(row[0])
+    if not des:
+        return None
+    dec = row[2].replace("'", " ").replace('"', "").replace("\\", "")
+    c = SkyCoord(row[1], dec, unit=(u.hourangle, u.deg))
+
+    def num(v):
+        try:
+            return float(str(v).rstrip("NT"))
+        except (TypeError, ValueError):
+            return float("nan")
+
+    vmag = num(row[6]) if len(row) > 6 else float("nan")
+    return SbIdentRecord(des, row[0], float(c.ra.deg), float(c.dec.deg), vmag,
+                         num(row[7]) if len(row) > 7 else float("nan"),
+                         num(row[8]) if len(row) > 8 else float("nan"))
+
+
+def sb_ident_query(ra_center: float, dec_center: float, ra_hwidth: float, dec_hwidth: float,
+                   time: Time, mpc_code: Optional[str] = "500", site=None,
+                   vmag_lim: float = 25.0, no_magnitude: str = "periodic",
+                   session=None) -> list:
+    """Comets JPL sb_ident places inside a centre/half-width field (degrees).
+
+    Reuses ``sbdb_ident_query.param_build`` (comet classes only), the same call
+    the field-of-regard simulator (``ultrasat_object_search.api_query``) makes.
+    The observer is an MPC code, or ``site=(lat_deg, lon_deg, alt_km)`` as in
+    the simulator.
+
+    ``no_magnitude`` decides what happens to comets sb_ident has no
+    magnitude model for (so ``vmag_lim`` cannot apply to them):
+
+    * ``'none'``: drop them. Same as the simulator (``mag-required=true``),
+      which loses e.g. 46P/Wirtanen in its Nov 2018 Swift images.
+    * ``'periodic'`` (default): keep numbered periodic comets such as 46P,
+      drop the rest, which are mostly long-gone SOHO sungrazer fragments.
+    * ``'all'``: keep everything.
     """
+    if no_magnitude not in ("none", "periodic", "all"):
+        raise ValueError("no_magnitude must be 'none', 'periodic' or 'all'")
     import sbdb_ident_query as sbq
 
     date = Time(time).utc.strftime("%Y-%m-%d_%H:%M:%S")
-    params = sbq.param_build(
-        date, vmag_lim,
-        [_sexagesimal(ra_center, hours=True), f"{ra_hwidth:.4f}"],
-        [_sexagesimal(dec_center, hours=False), f"{dec_hwidth:.4f}"],
-        loc=mpc_code, fov_center=True,
-    )
-    # Comets often lack a predicted V magnitude; don't drop them for that.
-    params["mag-required"] = "false"
+    ra = [_sexagesimal(ra_center, hours=True), f"{ra_hwidth:.4f}"]
+    dec = [_sexagesimal(dec_center, hours=False), f"{dec_hwidth:.4f}"]
+    if site is not None:
+        lat, lon, alt = site
+        params = sbq.param_build(date, vmag_lim, ra, dec, lat=lat, lon=lon, alt=alt, fov_center=True)
+    else:
+        params = sbq.param_build(date, vmag_lim, ra, dec, loc=mpc_code, fov_center=True)
+    params["mag-required"] = "true" if no_magnitude == "none" else "false"
     data = _get(SB_IDENT_URL, params, session=session)
     rows = data.get("data_second_pass") or data.get("data") or []
-    names = []
+    out, seen = [], set()
     for row in rows:
-        des = normalize_designation(row[0])
-        if des and des not in names:
-            names.append(des)
-    return names
+        rec = _parse_sb_ident_row(row)
+        if not rec or rec.designation in seen:
+            continue
+        if not np.isfinite(rec.vmag):
+            if no_magnitude == "none":
+                continue
+            if no_magnitude == "periodic" and not re.match(r"^\d+[PD]", rec.designation):
+                continue
+        elif rec.vmag > vmag_lim:
+            continue
+        seen.add(rec.designation)
+        out.append(rec)
+    return out
+
+
+def sb_ident_comets(*args, **kwargs) -> list:
+    """Designations only; see :func:`sb_ident_query` for the arguments."""
+    return [r.designation for r in sb_ident_query(*args, **kwargs)]
 
 
 EphemerisProvider = Callable[[str, Time, str], ObservingGeometry]
