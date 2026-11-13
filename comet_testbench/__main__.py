@@ -6,7 +6,7 @@ import argparse
 import logging
 from pathlib import Path
 
-from .pipeline import BenchConfig, fit_all, oh_measurements, run, write_results
+from .pipeline import BenchConfig, run, write_results
 
 
 def _pairs(paths):
@@ -38,9 +38,7 @@ def main(argv=None):
     r.add_argument("--config", help="JSON file with BenchConfig fields")
     r.add_argument("--candidate", action="append", default=[], help="comet to test, e.g. 46P")
     r.add_argument("--no-sb-ident", action="store_true", help="skip the JPL sb_ident discovery query")
-    r.add_argument("--beta", type=float, help="dust continuum scaling UVW1 = beta * V")
-    r.add_argument("--oh-conversion", type=float, help="erg s-1 cm-2 per UVW1 count/s for OH")
-    r.add_argument("--oh-model", help="OH model as package.module:ClassOrFactory")
+    r.add_argument("--no-handoff", action="store_true", help="skip the OH/H2O hand-off files")
 
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -61,14 +59,9 @@ def main(argv=None):
     if args.no_sb_ident:
         cfg.use_sb_ident = False
     results = run(_pairs(args.images), cfg)
-    oh = fits_ = None
-    if args.beta is not None and args.oh_conversion is not None:
-        oh = oh_measurements(results, args.beta, args.oh_conversion)
-        if args.oh_model:
-            from .oh import load_model
-
-            fits_ = fit_all(load_model(args.oh_model), oh)
-    write_results(results, args.out, oh, fits_)
+    paths = write_results(results, args.out, handoff=not args.no_handoff)
+    for p in paths:
+        print(f"hand-off: {p}")
     print(f"{len(results)} comet measurements written to {args.out}/")
 
 
