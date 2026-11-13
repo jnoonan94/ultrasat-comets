@@ -1,4 +1,4 @@
-"""End-to-end test bench: images -> comets in field -> photometry -> OH hand-off."""
+"""End-to-end test bench: images -> comets in field -> photometry -> hand-off file."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import numpy as np
 from .field_search import CometInField, find_comets
 from .image import ImageFrame, iter_frames
 from .instruments import InstrumentAdapter, adapter_for
-from .oh import OHModel, fit_production_rate, subtract_continuum
+from .oh import write_handoff
 from .photometry import GrowthCurve, fixed_aperture_photometry, iterative_aperture_photometry
 
 log = logging.getLogger(__name__)
@@ -120,44 +120,6 @@ def run(images: Sequence, cfg: BenchConfig, adapters=None, ephemeris=None, sb_id
 
 
 # --------------------------------------------------------------------------
-# OH hand-off
-# --------------------------------------------------------------------------
-
-def pair_for_oh(results: Sequence[CometMeasurement], oh_filter="UVW1", continuum_filter="V",
-                max_dt_hours: float = 2.0):
-    """Pair each OH-band measurement with the nearest-in-time continuum one."""
-    pairs = []
-    for m in results:
-        if m.filter != oh_filter or not m.fixed:
-            continue
-        best, best_dt = None, None
-        for n in results:
-            if (n.filter != continuum_filter or not n.fixed
-                    or n.comet.designation != m.comet.designation):
-                continue
-            dt = abs((n.frame.mid_time - m.frame.mid_time).to_value("hour"))
-            if dt <= max_dt_hours and (best_dt is None or dt < best_dt):
-                best, best_dt = n, dt
-        if best is not None:
-            pairs.append((m, best, best_dt))
-    return pairs
-
-
-def oh_measurements(results, beta: float, oh_conversion: float, **pair_kw):
-    """Continuum-subtracted OH fluxes for every UVW1/V pair (fixed apertures)."""
-    out = []
-    for w1, v, dt in pair_for_oh(results, **pair_kw):
-        out.append(subtract_continuum(w1.fixed, v.fixed, beta, oh_conversion, w1.comet.geometry,
-                                      meta={"oh_frame": w1.frame.source,
-                                            "continuum_frame": v.frame.source, "dt_hours": dt}))
-    return out
-
-
-def fit_all(model: OHModel, measurements):
-    return [(m, fit_production_rate(model, m)) for m in measurements]
-
-
-# --------------------------------------------------------------------------
 # Output
 # --------------------------------------------------------------------------
 
@@ -172,8 +134,12 @@ def _write(path, rows):
         w.writerows(rows)
 
 
-def write_results(results: Sequence[CometMeasurement], out_dir, oh=None, fits_=None):
-    """Write comets.csv, fixed_apertures.csv, growth_curves.csv (and OH tables)."""
+def write_results(results: Sequence[CometMeasurement], out_dir, handoff: bool = True):
+    """Write comets.csv, fixed_apertures.csv, growth_curves.csv and the hand-off files.
+
+    Hand-off files (one ECSV per comet, see :mod:`comet_testbench.oh`) go to
+    ``out_dir/handoff`` and are what the OH/H2O package reads.
+    """
     out_dir = Path(out_dir)
 
     def base(m):
@@ -194,18 +160,6 @@ def write_results(results: Sequence[CometMeasurement], out_dir, oh=None, fits_=N
     _write(out_dir / "growth_curves.csv",
            ({**base(m), "designation": m.comet.designation, "step": i, **a.row()}
             for m in results if m.growth for i, a in enumerate(m.growth.apertures)))
-    if oh:
-        _write(out_dir / "oh_fluxes.csv",
-               ({"designation": o.geometry.target, "time_jd_utc": o.geometry.time_jd_utc,
-                 "r_h_au": o.geometry.r_h, "delta_au": o.geometry.delta, "radius_km": r,
-                 "oh_rate": c, "oh_rate_err": ce, "oh_flux": f, "oh_flux_err": fe,
-                 **{k: v for k, v in o.meta.items()}}
-                for o in oh for r, c, ce, f, fe in
-                zip(o.radius_km, o.oh_rate, o.oh_rate_err, o.oh_flux, o.oh_flux_err)))
-    if fits_:
-        _write(out_dir / "production_rates.csv",
-               ({"designation": o.geometry.target, "time_jd_utc": o.geometry.time_jd_utc,
-                 "r_h_au": o.geometry.r_h, "model": f.model_name, "q": f.q, "q_err": f.q_err,
-                 "chi2": f.chi2, "dof": f.dof,
-                 "q_per_aperture": ";".join(f"{q:.4g}" for q in f.q_per_aperture)}
-                for o, f in fits_))
+    if handoff:
+        return write_handoff(results, out_dir / "handoff")
+    return []

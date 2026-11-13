@@ -1,15 +1,12 @@
 import json
-import sys
-import types
 
 import numpy as np
 import pytest
 from astropy.time import Time
 
-from comet_testbench import (BenchConfig, InstrumentAdapter, OHMeasurement, estimate_background,
-                             find_comets, fit_production_rate, fixed_aperture_photometry,
-                             iterative_aperture_photometry, load_frames, load_model,
-                             normalize_designation, run, subtract_continuum, write_results)
+from comet_testbench import (HANDOFF_SCHEMA, BenchConfig, InstrumentAdapter, estimate_background,
+                             find_comets, fixed_aperture_photometry, iterative_aperture_photometry,
+                             load_frames, normalize_designation, read_handoff, run, write_results)
 from comet_testbench.instruments import SwiftUVOT, adapter_for, uvot_coincidence_correction
 from comet_testbench.photometry import ApertureResult
 
@@ -163,73 +160,68 @@ def test_adapter_selection(tmp_path):
     assert SwiftUVOT().observer(load_frames(p1)[0]) == "500@-128485"
 
 
-# --- OH interface -----------------------------------------------------------
+# --- hand-off to the OH/H2O package -----------------------------------------
 
-class LinearToyModel:
-    """Stand-in for the real OH package: flux grows linearly with Q and radius."""
-    name = "toy"
-
-    def aperture_flux(self, production_rate, radius_km, geometry):
-        return 1e-41 * production_rate * np.asarray(radius_km) / geometry.r_h**2
-
-
-def _ap(r_km, rate, err):
-    return ApertureResult(0, 0, 0, 0, r_km, 0, 1, rate, err, 0)
-
-
-def test_continuum_subtraction_and_fit():
-    geom = geometry_at(200, 200, r_h=1.2)
-    model = LinearToyModel()
-    q_true = 3e28
-    radii = np.array([5000.0, 10000.0, 20000.0])
-    conv = 1e-12
-    oh_flux = model.aperture_flux(q_true, radii, geom)
-    beta = 0.1
-    v = [_ap(r, 100.0, 1.0) for r in radii]
-    w1 = [_ap(r, f / conv + beta * 100.0, 0.01 * f / conv) for r, f in zip(radii, oh_flux)]
-    meas = subtract_continuum(w1, v, beta, conv, geom)
-    assert np.allclose(meas.oh_flux, oh_flux, rtol=1e-9)
-    fit = fit_production_rate(model, meas)
-    assert fit.q == pytest.approx(q_true, rel=1e-4)
-    assert np.allclose(fit.q_per_aperture, q_true, rtol=1e-4)
-    assert fit.q_err > 0 and fit.model_name == "toy"
-
-
-def test_continuum_requires_matching_radii():
-    geom = geometry_at(200, 200)
-    with pytest.raises(ValueError):
-        subtract_continuum([_ap(1000, 1, 1)], [_ap(2000, 1, 1)], 0.1, 1.0, geom)
-
-
-def test_load_model_from_spec(monkeypatch):
-    mod = types.ModuleType("fake_oh_pkg")
-    mod.Model = LinearToyModel
-    mod.NotAModel = object
-    monkeypatch.setitem(sys.modules, "fake_oh_pkg", mod)
-    assert isinstance(load_model("fake_oh_pkg:Model"), LinearToyModel)
-    with pytest.raises(TypeError):
-        load_model("fake_oh_pkg:NotAModel")
-
-
-# --- end to end -------------------------------------------------------------
-
-def test_pipeline_end_to_end(tmp_path, stub_sb_ident):
-    from comet_testbench.pipeline import fit_all, oh_measurements
-
+def _two_filter_run(tmp_path, stub_sb_ident):
     w1 = write_fits(tmp_path / "w1.fits", coma_image(200, 200, amp=40, sigma=5, seed=2), filt="UVW1")
     v = write_fits(tmp_path / "v.fits", coma_image(200, 200, amp=60, sigma=5, seed=3), filt="V")
     cfg = BenchConfig(fixed_radii=[10, 20], fixed_unit="arcsec", iter_start=2, iter_step=2,
                       iter_max=60, background={"method": "annulus", "r_in": 90, "r_out": 130,
                                                "unit": "arcsec"})
     eph = StubEphemeris({"99P": (200, 200)})
-    res = run([w1, v], cfg, ephemeris=eph, sb_ident=stub_sb_ident)
+    return run([w1, v], cfg, ephemeris=eph, sb_ident=stub_sb_ident)
+
+
+def test_pipeline_end_to_end(tmp_path, stub_sb_ident):
+    res = _two_filter_run(tmp_path, stub_sb_ident)
     assert len(res) == 2 and all(m.growth.converged for m in res)
-    oh = oh_measurements(res, beta=0.1, oh_conversion=1e-12)
-    assert len(oh) == 1
-    fits_ = fit_all(LinearToyModel(), oh)
-    write_results(res, tmp_path / "out", oh, fits_)
-    for name in ("comets", "fixed_apertures", "growth_curves", "oh_fluxes", "production_rates"):
+    paths = write_results(res, tmp_path / "out")
+    for name in ("comets", "fixed_apertures", "growth_curves"):
         assert (tmp_path / "out" / f"{name}.csv").exists()
+    assert [p.name for p in paths] == ["99P_photometry.ecsv"]
+    assert not (tmp_path / "out" / "oh_fluxes.csv").exists()
+
+
+def test_handoff_file_contents(tmp_path, stub_sb_ident):
+    import astropy.units as u
+
+    res = _two_filter_run(tmp_path, stub_sb_ident)
+    (path,) = write_results(res, tmp_path / "out")
+    t = read_handoff(path)
+    assert t.meta["schema"] == HANDOFF_SCHEMA and t.meta["designation"] == "99P"
+    assert set(t["filter"]) == {"UVW1", "V"}
+    fixed = t[t["aperture_kind"] == "fixed"]
+    assert len(fixed) == 4 and sorted(set(fixed["radius_arcsec"].round(6))) == [10.0, 20.0]
+    # Exactly one converged growth-curve step per image.
+    it = t[t["aperture_kind"] == "iterative"]
+    assert it["is_converged_radius"].sum() == 2
+    # Units and geometry travel with the photometry.
+    assert t["radius_km"].unit == u.km and t["r_h"].unit == u.au and t["rate"].unit == u.ct / u.s
+    assert np.allclose(t["r_h"], 1.2) and np.allclose(t["delta"], 0.5)
+    # Matches the in-memory measurement.
+    w1 = next(m for m in res if m.filter == "UVW1")
+    row = fixed[(fixed["filter"] == "UVW1") & (fixed["step"] == 0)][0]
+    assert row["rate"] == pytest.approx(w1.fixed[0].rate)
+    assert row["radius_km"] == pytest.approx(w1.fixed[0].radius_km)
+
+
+def test_handoff_readable_without_astropy(tmp_path, stub_sb_ident):
+    import csv
+
+    res = _two_filter_run(tmp_path, stub_sb_ident)
+    (path,) = write_results(res, tmp_path / "out")
+    lines = [l for l in path.read_text().splitlines() if not l.startswith("#")]
+    rows = list(csv.DictReader(lines))
+    assert rows and {"filter", "radius_km", "rate", "r_h", "delta", "r_dot"} <= set(rows[0])
+
+
+def test_read_handoff_rejects_other_files(tmp_path):
+    from astropy.table import Table
+
+    p = tmp_path / "x.ecsv"
+    Table({"a": [1]}).write(p, format="ascii.ecsv")
+    with pytest.raises(ValueError):
+        read_handoff(p)
 
 
 def test_config_from_json(tmp_path):

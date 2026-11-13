@@ -173,11 +173,15 @@ What it does, per image extension:
    recentres on the coma and grows the aperture until the flux converges,
    recording the growth curve. UVOT images get a pixel-level coincidence-loss
    correction (Poole et al. 2008).
-3. **OH hand-off** (`oh.py`). Pairs UVW1 and V measurements of the same comet,
-   forms `OH = UVW1 - beta * V`, converts to an OH band flux, and fits a
-   production rate with any model object that implements
-   `aperture_flux(production_rate, radius_km, geometry)`. The OH model itself is
-   developed separately; see `examples/toy_oh_model.py` for the interface.
+3. **Hand-off to the OH/H2O package** (`oh.py`). The bench stops at aperture
+   photometry plus observing geometry and writes one plain-text ECSV file per
+   comet (`results/handoff/<comet>_photometry.ecsv`). Each row is one aperture
+   in one image: filter, time, radius in pix/arcsec/km, count rate, background,
+   calibrated flux where known, and the comet's r_h, r_dot, Delta and phase.
+   Units and column descriptions sit in the commented header. Continuum
+   removal, OH fluxes, the coma model and production rates all live in the
+   separately developed OH/H2O package, which reads this file with
+   `astropy.table.Table.read(path)` (or any CSV reader that skips `#` lines).
 
 ### Same search for simulated pointings and real images
 
@@ -221,14 +225,11 @@ python -m comet_testbench fetch '%WIRTANEN%' --start 2018-11-28 --stop 2018-12-3
 # Find comets and measure them; writes CSVs to results/
 python -m comet_testbench run data/swift/*/*_sk.img.gz --config examples/swift_46p_config.json --out results
 
-# With the OH step (beta and the OH count-rate-to-flux factor come from your calibration)
-python -m comet_testbench run data/swift/*/*_sk.img.gz --beta <beta> --oh-conversion <factor> \
-    --oh-model your_oh_package.module:Model
 ```
 
 Outputs: `comets.csv` (one row per comet per frame, with geometry, trail length
-and growth-curve status), `fixed_apertures.csv`, `growth_curves.csv`, and, when the
-OH step runs, `oh_fluxes.csv` and `production_rates.csv`.
+and growth-curve status), `fixed_apertures.csv`, `growth_curves.csv`, and the hand-off
+files in `handoff/` (skip them with `--no-handoff`).
 
 ### Tests
 
