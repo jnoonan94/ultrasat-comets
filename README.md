@@ -234,8 +234,33 @@ files in `handoff/` (skip them with `--no-handoff`).
 ### Tests
 
 `pytest` runs the offline suite on synthetic comet images. `pytest -m network`
-runs a live check that downloads a Swift UVW1 image of 46P and confirms the
-comet is found within a few pixels of the Horizons prediction.
+runs the live checks on real Swift frames (below); downloads are cached in
+`$COMET_BENCH_CACHE` (default `data/swift`, about 150 MB).
+
+### Benchmarks
+
+The benchmarks check that the search and photometry carry over from the
+field-of-regard simulations to real images. The metrics live in
+`comet_testbench/benchmarks.py` and take any `ImageFrame`, so the same calls
+run on downlinked UltraSat frames once they exist. Each one has an offline test
+on synthetic images (`tests/test_benchmarks.py`) and a real-data test on eight
+Swift/UVOT frames of 46P and 41P in UVW1 and V
+(`tests/test_benchmarks_swift.py`, frame list in `SWIFT_BENCHMARK_FRAMES`).
+
+| # | Benchmark | Function | Real-data check |
+|---|---|---|---|
+| 1 | Ephemeris recovery | `ephemeris_offset` (total, along-track, cross-track) | every frame within 1.5" plus the timing allowance; median under 1.1" |
+| 2 | Non-sidereal motion | `CometInField.trail_pix`, `timing_tolerance_arcsec` | 46P at 0.08 au (trail > 100 px) still found and measured; residual lies along the motion |
+| 3 | Edge and crowded fields | coverage in `ApertureResult`, recentring guard | bright stars 20 to 35" from 46P do not capture the recentring |
+| 4 | Faint-limit completeness | `inject_coma`, `completeness_curve`, `fifty_percent_rate` | 1/ρ comae injected into real 41P backgrounds; 50% point within 3x of the Poisson limit, false positives ≤ 10% |
+| 5 | Aperture stability | `aperture_stability` | enclosed rate never drops with radius; spread across background choices recorded |
+| 6 | OH package round trip | `tests/stub_oh_package.py` | hand-off file read, units checked, UVW1 paired with V at the same km radius |
+| 7 | Fields with no comet | `run` | the two Galactic Centre visits labelled `COMET41P` return nothing |
+
+`tests/stub_oh_package.py` is a placeholder for the OH/H2O package. It reads
+the hand-off file, refuses unknown schemas, missing columns and missing units,
+and pairs each OH-band image with the nearest continuum image. Its "model" is a
+fixed continuum scale, so it tests the interface and nothing else.
 
 ### Caveats
 
@@ -243,6 +268,13 @@ comet is found within a few pixels of the Horizons prediction.
   (2008) / Breeveld et al. (2011); verify against the current CALDB.
 - Each snapshot is measured separately; the comet's motion during an exposure is
   reported (`trail_pix`) but not corrected.
+- The ephemeris time is the midpoint of DATE-OBS/DATE-END. When the exposure
+  covers only part of that span (46P obsid 00094422001: 122 s of 276 s), the
+  light-weighted time can differ, which shows up as an along-track offset
+  (3" there).
+- For comets at 0.1 to 0.2 au the coma fills the UVOT field, so every sky
+  annulus holds coma light. A 20" aperture rate changes by 10 to 33% between
+  background choices on the benchmark frames.
 - Swift target names are not always reliable: two archive visits labelled
   `COMET41P` (obsids 00093389002/003) point at the Galactic Centre, and the bench
   correctly reports no comet in them.
