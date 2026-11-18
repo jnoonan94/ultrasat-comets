@@ -1,0 +1,35 @@
+{
+  "schema": "ultrasat-mission-parameters/1",
+  "mission": "Swift/UVOT",
+  "version": "1.0.0",
+  "updated": "2026-11-18",
+  "instrument_match": ["UVOT", "SWIFT"],
+  "calibration_source": "swift_comet_pipeline",
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2026-11-18",
+      "notes": "Reference instrument for the test bench. beta and the OH flux factor are computed by swift_comet_pipeline 0.3; the values here are for reference only."
+    }
+  ],
+  "parameters": {
+    "pixel_scale": {
+      "value": 1.004, "unit": "arcsec/pix", "status": "measured",
+      "source": "UVOT 2x2-binned sky images (0.502 arcsec unbinned)"
+    },
+    "horizons_id": {
+      "value": "-128485", "status": "measured",
+      "source": "JPL Horizons"
+    },
+    "oh_band": {"value": "UVW1", "status": "measured", "source": "swift_comet_pipeline"},
+    "continuum_band": {"value": "V", "status": "measured", "source": "swift_comet_pipeline"},
+    "beta": {
+      "value": 0.0902, "status": "reference",
+      "source": "swift_comet_pipeline beta_parameter(0 %/100 nm, uw1, uvv); recomputed at run time"
+    },
+    "oh_flux_per_count_rate": {
+      "value": 1.2750906353215913e-12, "unit": "erg cm-2 s-1 per ct s-1", "status": "reference",
+      "source": "swift_comet_pipeline flux_OH (Bodewits et al. 2019 OH spectrum through UVW1)"
+    }
+  }
+}
