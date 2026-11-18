@@ -53,7 +53,10 @@ semantic `version`, a `changelog`, and for every parameter a `value`,
 `unit`, `status` (measured, nominal, reference, simulator, unconfirmed, TBD)
 and `source`. `oh_h2o.load_mission_parameters` checks the file, and
 `oh_h2o.calibration_from_mission` turns it into the OH model's calibration.
-For ULTRASAT, that call refuses to run, listing what's still TBD. Every result
+For ULTRASAT, that call refuses to run, listing what's still TBD. ULTRASAT
+measures OH in the A-X (1-0) band at ~282 nm (`oh_bands: ["1-0"]`), not the
+(0-0) band at 309 nm that Swift/UVW1 sees. The method is the same, with the
+(1-0) fluorescence g-factor. Every result
 file records the parameter version it used. How to update a file and which
 tests to rerun is in [`future_tests.md`](future_tests.md).
 

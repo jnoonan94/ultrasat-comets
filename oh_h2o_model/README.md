@@ -25,12 +25,13 @@ This package adds three things:
 | Continuum scale β | `OHCalibration.beta(redness)` | `photometry.dust.beta_parameter` | yes |
 | OH signal = OH band − β × continuum | `continuum_subtract` | (same arithmetic as `builders.aperture_water_production_calculator`) | no |
 | OH flux (erg cm⁻² s⁻¹) | `oh_flux` | `modeling.water_production.flux_OH.oh_count_rates_to_flux_factor` | yes (the factor) |
-| Number of OH molecules | `oh_molecules` | `modeling.water_production.fluorescence_OH.oh_flux_to_num_oh` (g-factor: Schleicher & A'Hearn 1988) | no |
+| Number of OH molecules | `oh_molecules` | `modeling.water_production.fluorescence_OH.oh_flux_to_num_oh` (g-factor: Schleicher & A'Hearn 1988) | which OH bands the flux covers |
 | Q(H2O) matched to the aperture | `q_h2o_in_aperture` | `modeling.water_production.num_OH_to_Q.num_oh_within_r_to_q_h2o_vectorial` | no |
 | Q(H2O) if the aperture held the whole coma | `q_h2o_total` | `num_oh_to_q_h2o_vectorial` | no |
 
-Only two numbers depend on the telescope: β and the OH flux per count rate.
-They sit behind `OHCalibration`:
+Only two numbers depend on the telescope, β and the OH flux per count rate,
+plus which OH A-X bands that flux covers (`oh_bands`), which picks the
+fluorescence g-factor. They sit behind `OHCalibration`:
 
 * `SwiftUVOTCalibration(oh_band="UVW1", continuum_band="V")` gets them from
   swift_comet_pipeline (UVW1, UVW2, UVM2 and U have flux factors there).
@@ -38,20 +39,33 @@ They sit behind `OHCalibration`:
   takes them as numbers (β can be a function of redness). This is the slot for
   ULTRASAT until it has its own class.
 
+### OH bands and the g-factor
+
+Swift measures OH through UVW1, which takes in the whole OH spectrum, mostly
+(0-0) at 309 nm. swift_comet_pipeline therefore uses the g-factor of all
+bands summed (`oh_bands = None`, the default). ULTRASAT will use the (1-0)
+transition at ~282 nm (`oh_bands = ("1-0",)` in `mission_parameters/ultrasat.json`),
+so its OH flux must be the (1-0) flux, and the g-factor is the (1-0) column
+of the same Schleicher & A'Hearn (1988) table, about 1/8 of (0-0). swift_comet_pipeline
+only offers the summed g-factor, so for single bands this package reads its
+table and interpolates it the same way (cubic in heliocentric velocity), then
+uses the same N = 4πΔ²F r_h² / g formula. Known bands: `0-0`, `1-0`, `1-1`, `2-2`.
+Everything after the OH count (vectorial model, Q) is the same for any band.
+
 Or build the calibration from a versioned mission parameter file:
 
 ```python
 cal = oh_h2o.calibration_from_mission("mission_parameters/swift_uvot.json")   # SwiftUVOTCalibration
 cal = oh_h2o.calibration_from_mission("mission_parameters/ultrasat.json")
-# MissionParameterError: ULTRASAT parameters v0.1.0: OH calibration incomplete,
+# MissionParameterError: ULTRASAT parameters v0.2.0: OH calibration incomplete,
 #   still TBD: oh_band, continuum_band, beta, oh_flux_per_count_rate
 ```
 
 A file with `"calibration_source": "swift_comet_pipeline"` takes β and the
 flux factor from swift_comet_pipeline (the numbers in the file are reference
 copies, checked by a test). One with `"this_file"` uses the file's `beta`,
-optional `beta_reddening_slope` (β(d) = β·(1 + slope·d)) and
-`oh_flux_per_count_rate`. Result tables record the file and version in
+optional `beta_reddening_slope` (β(d) = β·(1 + slope·d)),
+`oh_flux_per_count_rate` and `oh_bands`. Result tables record the file and version in
 `meta["mission_parameters"]`. The file format and the update rules are in
 `oh_h2o/mission.py` and `../future_tests.md`.
 

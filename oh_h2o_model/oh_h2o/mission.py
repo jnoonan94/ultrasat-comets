@@ -18,8 +18,9 @@ One JSON file per instrument, schema ``ultrasat-mission-parameters/1``::
 
 ``status`` is one of measured, nominal, reference, simulator, unconfirmed or
 TBD. A parameter whose value is null is not known yet. The OH model reads
-``oh_band``, ``continuum_band``, ``beta``, ``beta_reddening_slope`` (optional)
-and ``oh_flux_per_count_rate``; the rest are there for the test bench and the
+``oh_band``, ``continuum_band``, ``beta``, ``beta_reddening_slope`` (optional),
+``oh_flux_per_count_rate`` and ``oh_bands`` (which OH A-X bands that flux
+covers, e.g. ["1-0"]; missing or null = all bands summed); the rest are there for the test bench and the
 future tests in ``future_tests.md``.
 """
 
@@ -126,6 +127,7 @@ def calibration_from_mission(source) -> OHCalibration:
             continuum_band=mp.value("continuum_band"), beta_value=beta,
             flux_per_count_rate=float(mp.value("oh_flux_per_count_rate")),
             instruments=mp.instrument_match,
+            oh_bands=tuple(mp.value("oh_bands")) if mp.value("oh_bands") else None,
         )
     else:
         raise MissionParameterError(f"{mp.label}: unknown calibration_source {mp.calibration_source!r}")

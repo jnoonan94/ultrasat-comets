@@ -19,7 +19,7 @@ instrument such as ULTRASAT plugs in until it has its own calibration class.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Protocol, Union, runtime_checkable
+from typing import Callable, Optional, Protocol, Union, runtime_checkable
 
 
 @runtime_checkable
@@ -38,6 +38,10 @@ class OHCalibration(Protocol):
 
     def oh_flux_per_count_rate(self) -> float:
         """erg cm^-2 s^-1 of OH emission per count/s of OH signal in the OH band."""
+
+    # Optional attribute: ``oh_bands``, the OH A-X bands that flux refers to
+    # (e.g. ("1-0",)), which picks the fluorescence g-factor. None = all bands
+    # summed, as swift_comet_pipeline does for UVW1.
 
 
 # Hand-off filter names (FITS FILTER keyword) -> swift_comet_pipeline UvotFilter names.
@@ -74,6 +78,7 @@ class SwiftUVOTCalibration:
     oh_band: str = "UVW1"
     continuum_band: str = "V"
     name: str = "swift-uvot"
+    oh_bands: Optional[tuple] = None  # all OH bands, as swift_comet_pipeline does
 
     def accepts(self, instrument: str) -> bool:
         s = str(instrument).upper()
@@ -103,7 +108,8 @@ class FixedCalibration:
     """Any instrument, from numbers you supply.
 
     ``beta`` is a number (no reddening dependence) or a function of dust
-    redness in %/100 nm. ``instruments`` lists substrings of the hand-off
+    redness in %/100 nm. ``flux_per_count_rate`` is the flux in the OH bands
+    named by ``oh_bands`` (for ULTRASAT, the (1-0) band at 282 nm). ``instruments`` lists substrings of the hand-off
     'instrument' column this applies to; empty means any.
     """
 
@@ -113,6 +119,7 @@ class FixedCalibration:
     beta_value: Union[float, Callable[[float], float]]
     flux_per_count_rate: float
     instruments: tuple = field(default_factory=tuple)
+    oh_bands: Optional[tuple] = None  # e.g. ("1-0",); None = all bands summed
 
     def accepts(self, instrument: str) -> bool:
         if not self.instruments:

@@ -92,6 +92,9 @@ def _install_config(cfg) -> None:
         f = getattr(importlib.import_module(name), fn, None)
         if hasattr(f, "cache_clear"):
             f.cache_clear()
+    from . import physics
+
+    physics._band_interpolator.cache_clear()
 
 
 def configure(data_dir: Optional[os.PathLike] = None, cache_dir: Optional[os.PathLike] = None,

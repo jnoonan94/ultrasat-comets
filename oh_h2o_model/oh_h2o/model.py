@@ -128,7 +128,7 @@ _COLUMNS = {
     "continuum_rate_err": (u.ct / u.s, ""),
     "oh_rate": (u.ct / u.s, "OH signal: OH band - beta * continuum"),
     "oh_rate_err": (u.ct / u.s, ""),
-    "oh_flux": (u.erg / u.cm**2 / u.s, "OH emission flux"),
+    "oh_flux": (u.erg / u.cm**2 / u.s, "OH emission flux in the calibration's OH bands"),
     "oh_flux_err": (u.erg / u.cm**2 / u.s, ""),
     "num_oh": (None, "OH molecules in the aperture"),
     "num_oh_err": (None, ""),
@@ -159,6 +159,7 @@ def run(source: Union[str, Path, Table], calibration: OHCalibration,
     kinds = set(aperture_kinds)
     flux_factor = calibration.oh_flux_per_count_rate()
     betas = {d: calibration.beta(d) for d in reds}
+    oh_bands = getattr(calibration, "oh_bands", None)
     frames = _frames(t)
     designation = str(t.meta.get("designation", ""))
 
@@ -186,7 +187,7 @@ def run(source: Union[str, Path, Table], calibration: OHCalibration,
                 beta = betas[d]
                 s = physics.continuum_subtract(float(a["rate"]), float(a["rate_err"]), c, c_err, beta)
                 flux = s * flux_factor
-                n = physics.oh_molecules(flux, geo)
+                n = physics.oh_molecules(flux, geo, bands=oh_bands)
                 q = physics.q_h2o_in_aperture(n, geo, r_km)
                 qt = physics.q_h2o_total(n, geo) if total_q else None
                 rows.append({
@@ -228,6 +229,7 @@ def run(source: Union[str, Path, Table], calibration: OHCalibration,
         "oh_band": calibration.oh_band,
         "continuum_band": calibration.continuum_band,
         "oh_flux_per_count_rate": flux_factor,
+        "oh_bands": "all" if oh_bands is None else ",".join(oh_bands),
         "swift_comet_pipeline_version": scp_version,
         "oh_h2o_version": __version__,
         "vectorial_model": {k: settings()[k] for k in ("quality", "backend")},

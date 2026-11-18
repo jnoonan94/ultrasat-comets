@@ -94,6 +94,27 @@ def test_g_factor_has_swings_effect(configured):
     assert 1e-15 < oh_h2o.g_factor_1au(0.0) < 1e-14
 
 
+def test_band_g_factors(configured):
+    # Schleicher & A'Hearn 1988 Table 5 at 0 km/s: (1-0) = 1.76e-16, (0-0) = 1.49e-15.
+    assert oh_h2o.g_factor_1au(0.0, ["1-0"]) == pytest.approx(1.76e-16)
+    assert oh_h2o.g_factor_1au(0.0, ["(0-0)"]) == pytest.approx(1.49e-15)
+    # All bands summed equals swift_comet_pipeline's g-factor.
+    for v in (-12.3, 0.0, 4.7):
+        assert oh_h2o.g_factor_1au(v, ["0-0", "1-0", "1-1", "2-2"]) == pytest.approx(
+            oh_h2o.g_factor_1au(v), rel=1e-9)
+    with pytest.raises(ValueError, match="unknown OH band"):
+        oh_h2o.g_factor_1au(0.0, ["2-1"])
+
+
+def test_oh_molecules_from_one_band(configured):
+    flux = physics._vsd(1e-13, 1e-14)
+    n10 = oh_h2o.oh_molecules(flux, GEO, bands=["1-0"])
+    n_all = oh_h2o.oh_molecules(flux, GEO)
+    ratio = oh_h2o.g_factor_1au(GEO.r_dot) / oh_h2o.g_factor_1au(GEO.r_dot, ["1-0"])
+    assert n10.value == pytest.approx(n_all.value * ratio, rel=1e-6)
+    assert n10.sigma / n10.value == pytest.approx(0.1)
+
+
 def test_q_scales_linearly_with_oh(configured):
     n1 = physics._vsd(1e31, 1e30)
     n2 = physics._vsd(2e31, 2e30)
@@ -236,14 +257,20 @@ def test_filled_mission_file_gives_fixed_calibration(tmp_path, configured):
     for k, v in (("oh_band", "OH"), ("continuum_band", "CONT"), ("beta", 0.25),
                  ("beta_reddening_slope", -0.01), ("oh_flux_per_count_rate", 2e-12)):
         p[k].update(value=v, status="nominal")
-    d["version"] = "0.2.0"
-    d["changelog"].append({"version": "0.2.0", "date": "2026-11-18", "notes": "test"})
+    d["version"] = "0.3.0"
+    d["changelog"].append({"version": "0.3.0", "date": "2026-11-18", "notes": "test"})
     f = tmp_path / "ultrasat.json"
     f.write_text(json.dumps(d))
     cal = oh_h2o.calibration_from_mission(f)
     assert cal.beta(0) == pytest.approx(0.25) and cal.beta(10) == pytest.approx(0.225)
     res = oh_h2o.run(_handoff(oh_filter="OH", cont_filter="CONT", instrument="ULTRASAT"), cal)
-    assert res.meta["mission_parameters"] == "ULTRASAT parameters v0.2.0"
+    assert res.meta["mission_parameters"] == "ULTRASAT parameters v0.3.0"
+    # ULTRASAT measures OH (1-0): the g-factor is that band's, not all bands summed.
+    assert cal.oh_bands == ("1-0",) and res.meta["oh_bands"] == "1-0"
+    r = res[res["radius_km"] == 3000][0]
+    g10 = oh_h2o.g_factor_1au(GEO.r_dot, ["1-0"]) / GEO.r_h**2
+    assert r["num_oh"] == pytest.approx(4 * np.pi * (GEO.delta * AU_CM) ** 2 * r["oh_flux"] / g10,
+                                        rel=1e-6)
 
 
 def test_swift_mission_file_uses_scp(configured):
@@ -259,7 +286,7 @@ def test_mission_file_validation(tmp_path):
     import json
 
     d = json.loads((MISSION_DIR / "ultrasat.json").read_text())
-    d["version"] = "0.3.0"  # no changelog entry
+    d["version"] = "0.9.0"  # no changelog entry
     f = tmp_path / "bad.json"
     f.write_text(json.dumps(d))
     with pytest.raises(oh_h2o.MissionParameterError, match="changelog"):

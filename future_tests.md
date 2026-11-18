@@ -31,24 +31,32 @@ print(mp.label, [n for n, p in mp.parameters.items() if p['status'] == 'TBD'])"
 
 ## A. OH chemistry and calibration (oh_h2o)
 
-### A1. Does the ULTRASAT band see OH at all?
+### A1. OH (1-0) response and red-edge contamination
 - **Needs:** `bandpass`, `throughput_curve`
-- **Why:** OH (0-0) emission is near 309 nm. The nominal ULTRASAT band in the
-  file (230–290 nm, status `unconfirmed`) ends below that. Before any OH
-  production-rate work, find the throughput at 305–312 nm: the red edge,
-  the red leak, or a dedicated filter.
-- **Test:** convolve the OH fluorescence spectrum (the one swift_comet_pipeline
-  uses for UVW1, Bodewits et al. 2019) with `throughput_curve`. Report the
-  count rate per unit OH flux.
-- **Pass:** a non-zero response, and an expected OH signal-to-noise for 46P-like
-  activity (Q ~ 10²⁸ s⁻¹ at 1 au) above 5 in one exposure. If not, the OH
-  goal needs another route, and every other test in section A is moot.
+- **Why:** ULTRASAT measures OH in the A-X (1-0) band near 282 nm
+  (`oh_bands: ["1-0"]`), which sits inside the nominal 230–290 nm band. This
+  is the same method as Swift, which uses (0-0) at 309 nm in UVW1. Two things
+  to check. First, the (1-0) band is weaker: its g-factor is about 1/8 of
+  (0-0) (1.76 × 10⁻¹⁶ against 1.49 × 10⁻¹⁵ erg s⁻¹ at 1 au, 0 km/s), so the
+  signal per molecule is lower. Second, any response at 305–320 nm would add
+  (0-0) and (1-1) emission to what the model treats as (1-0) only.
+- **Test:** convolve an OH spectrum with `throughput_curve`, band by band.
+  Report the count rate per unit flux for (1-0), and the fraction of the OH
+  count rate that comes from (0-0) and (1-1).
+- **Pass:** the (0-0) + (1-1) fraction is under 5%. If it isn't, set
+  `oh_bands` to the bands actually seen, so the g-factor is summed over the
+  same bands as the flux. Also report the expected OH signal-to-noise for
+  46P-like activity (Q ~ 10²⁸ s⁻¹ at 1 au) in one exposure: above 5 is the
+  goal.
 
 ### A2. OH flux factor
 - **Needs:** `throughput_curve`, `oh_band`
-- **Test:** compute `oh_flux_per_count_rate` the way swift_comet_pipeline does
-  for UVW1, write it into the file, and check that reproducing the Swift UVW1
-  number from the Swift effective area gives 1.275 × 10⁻¹² within 2%.
+- **Test:** compute `oh_flux_per_count_rate`, the flux in the (1-0) band per
+  count/s, the way swift_comet_pipeline does for UVW1 (Bodewits et al. 2019),
+  and write it into the file. As a check of the method, reproducing the Swift
+  UVW1 number from the Swift effective area should give 1.275 × 10⁻¹² within
+  2%. The flux and the g-factor must cover the same bands: `oh_h2o` takes the
+  g-factor from `oh_bands`.
 
 ### A3. Continuum scale β and reddening
 - **Needs:** `throughput_curve`, `oh_band`, `continuum_band`
@@ -71,7 +79,8 @@ print(mp.label, [n for n, p in mp.parameters.items() if p['status'] == 'TBD'])"
 
 ### A5. End-to-end on a simulated ULTRASAT frame
 - **Needs:** `pixel_scale`, `oh_flux_per_count_rate`, `beta`, `gain`, `read_noise`
-- **Test:** inject a vectorial-model OH coma (Q known) plus a dust coma
+- **Test:** inject a vectorial-model OH coma (Q known, (1-0) surface
+  brightness from the (1-0) g-factor) plus a dust coma
   scaled by β into a virtual ULTRASAT frame (`comet_testbench.pointing.virtual_frame`
   at `pixel_scale`), run the bench, then `oh_h2o`.
 - **Pass:** the Q recovered at the converged radius is within 10% of the
