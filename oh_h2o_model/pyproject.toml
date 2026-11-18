@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "OH -> H2O production rates from comet test bench photometry, built on swift_comet_pipeline"
 # swift_comet_pipeline 0.3 supports Python 3.11 and 3.12 only.
 requires-python = ">=3.11,<3.13"
+license = {file = "LICENSE"}  # GPL-3.0, same as swift_comet_pipeline
 dependencies = [
     "swift_comet_pipeline>=0.3,<0.4",
     # swift_comet_pipeline needs these but does not declare them:

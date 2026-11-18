@@ -13,7 +13,10 @@ This package adds three things:
   without touching the physics;
 * reading the test bench hand-off, pairing OH-band and continuum images, and
   matching apertures by physical radius;
-* the set-up swift_comet_pipeline needs when it is installed from PyPI.
+* the set-up swift_comet_pipeline needs when it is installed from PyPI;
+* reading the versioned mission parameter files in `../mission_parameters/`.
+
+**Licence:** GPL-3.0 (see `LICENSE`), the same as swift_comet_pipeline.
 
 ## Steps and where they come from
 
@@ -34,6 +37,23 @@ They sit behind `OHCalibration`:
 * `FixedCalibration(name, oh_band, continuum_band, beta_value, flux_per_count_rate, instruments=(...))`
   takes them as numbers (β can be a function of redness). This is the slot for
   ULTRASAT until it has its own class.
+
+Or build the calibration from a versioned mission parameter file:
+
+```python
+cal = oh_h2o.calibration_from_mission("mission_parameters/swift_uvot.json")   # SwiftUVOTCalibration
+cal = oh_h2o.calibration_from_mission("mission_parameters/ultrasat.json")
+# MissionParameterError: ULTRASAT parameters v0.1.0: OH calibration incomplete,
+#   still TBD: oh_band, continuum_band, beta, oh_flux_per_count_rate
+```
+
+A file with `"calibration_source": "swift_comet_pipeline"` takes β and the
+flux factor from swift_comet_pipeline (the numbers in the file are reference
+copies, checked by a test). One with `"this_file"` uses the file's `beta`,
+optional `beta_reddening_slope` (β(d) = β·(1 + slope·d)) and
+`oh_flux_per_count_rate`. Result tables record the file and version in
+`meta["mission_parameters"]`. The file format and the update rules are in
+`oh_h2o/mission.py` and `../future_tests.md`.
 
 `q_h2o` (aperture-matched) is the one to use. `q_h2o_total` is what
 swift_comet_pipeline calls the "equivalent" production rate; it is only right
@@ -60,7 +80,8 @@ without declaring it; this package's dependencies add it.
 
 ```bash
 python -m comet_testbench run data/swift/*/*_sk.img.gz --config examples/swift_46p_config.json
-python -m oh_h2o results/handoff/46P_photometry.ecsv --redness 0 10 20 --quality medium
+python -m oh_h2o results/handoff/46P_photometry.ecsv --mission mission_parameters/swift_uvot.json \
+    --redness 0 10 20 --quality medium
 # -> results/oh/46P_water.ecsv
 ```
 

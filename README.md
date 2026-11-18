@@ -1,57 +1,93 @@
-# ultrasat-observability
+# ultrasat-comets
 
-Observability simulation tool for the [UltraSat](https://www.weizmann.ac.il/ultrasat/) space telescope. Predicts which comets and small solar system bodies will fall within UltraSat's field of view across a given date range and sky region, using the [JPL Small Body Database Identification API](https://ssd-api.jpl.nasa.gov/doc/sb_ident.html).
+Tools for the UltraSat OH cometary pipeline: from planning which comets
+ULTRASAT will see, to measuring them in images, to water production rates.
 
----
-
-## Overview
-
-UltraSat is a UV space telescope in geostationary orbit (~35,785 km altitude) with a 20° × 10° (RA × Dec) field of view. This tool:
-
-1. Generates a grid of FOV centers in galactic or equatorial coordinates
-2. Loops through dates and FOV positions, querying JPL SBDB for observable comets and near-Earth objects
-3. Applies pointing constraints (galactic latitude, solar elongation, lunar separation)
-4. Produces sky maps showing cumulative detection densities
-
-Supported small body classes: Jupiter-family comets (JFc), Encke-type comets (ETc), Halley-type comets (HTC), parabolic (PAR), hyperbolic (HYP), and unclassified comets (COM).
-
----
-
-## Installation
-
-No package installation is required beyond the dependencies below. Clone the repo and run scripts directly.
-
-**Dependencies:**
+| Part | Folder | What it does | Python |
+|---|---|---|---|
+| Observability simulator | `ultrasat_object_search.py`, `sbdb_ident_query.py` | Which comets fall in ULTRASAT's field of regard over a date range (JPL sb_ident) | ≥ 3.9 |
+| Comet test bench | `comet_testbench/` | Finds comets in FITS images from the WCS, measures aperture photometry, writes a hand-off file per comet | ≥ 3.9 |
+| OH → H2O model | `oh_h2o_model/` (`oh_h2o`) | Continuum removal, OH flux and H2O production rate from the hand-off file, built on swift_comet_pipeline | 3.11–3.12 |
+| Mission parameters | `mission_parameters/*.json` | Versioned instrument numbers (Swift/UVOT now, ULTRASAT as they become known) | – |
+| Future tests | [`future_tests.md`](future_tests.md) | What to run when each ULTRASAT parameter arrives, and a results log | – |
 
 ```
-astropy>=4.0
-numpy
-pandas
-matplotlib
-requests
+FITS images ─▶ comet_testbench ─▶ results/handoff/<comet>_photometry.ecsv ─▶ oh_h2o ─▶ results/oh/<comet>_water.ecsv
+                                                                               ▲
+                                                         mission_parameters/<instrument>.json
 ```
 
-Install with:
+The test bench and the OH model meet only at the hand-off file (ECSV,
+schema `ultrasat-comet-photometry/1`), so each can change without the other.
+
+## Install
 
 ```bash
-pip install astropy numpy pandas matplotlib requests
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -e .[test]                  # simulator + test bench
+pip install -e oh_h2o_model[test]       # OH -> H2O model (pulls swift_comet_pipeline)
+git clone --depth 1 https://github.com/sjoset/swift_comet_pipeline ~/src/swift_comet_pipeline
+export SWIFT_COMET_PIPELINE_DATA=~/src/swift_comet_pipeline/data
+```
+
+The OH model needs swift_comet_pipeline's `data/` folder, which its PyPI
+release leaves out. See [`oh_h2o_model/README.md`](oh_h2o_model/README.md).
+
+## Quick start: Swift images to water production rates
+
+```bash
+python -m comet_testbench fetch '%WIRTANEN%' --start 2018-12-10 --stop 2018-12-20 --dest data/swift
+python -m comet_testbench run data/swift/*/*_sk.img.gz --config examples/swift_46p_config.json --out results
+python -m oh_h2o results/handoff/46P_photometry.ecsv --mission mission_parameters/swift_uvot.json \
+    --redness 0 10 --max-dt 240 --out results/oh
+```
+
+On the six 46P benchmark frames this gives Q(H2O) of 0.5–1.3 × 10²⁸ s⁻¹ in
+5,000–20,000 km apertures, in line with published values for 46P in
+December 2018.
+
+## Mission parameters
+
+Each instrument has one JSON file in `mission_parameters/` with a
+semantic `version`, a `changelog`, and for every parameter a `value`,
+`unit`, `status` (measured, nominal, reference, simulator, unconfirmed, TBD)
+and `source`. `oh_h2o.load_mission_parameters` checks the file, and
+`oh_h2o.calibration_from_mission` turns it into the OH model's calibration.
+For ULTRASAT, that call refuses to run, listing what's still TBD. Every result
+file records the parameter version it used. How to update a file and which
+tests to rerun is in [`future_tests.md`](future_tests.md).
+
+## Licence
+
+`oh_h2o_model/` is GPL-3.0 (see `oh_h2o_model/LICENSE`), the licence of
+swift_comet_pipeline, which it imports.
+
+## File structure
+
+```
+ultrasat-comets/
+├── ultrasat_object_search.py       # Observability simulator (FOV grids, loop, post-processing, plots)
+├── sbdb_ident_query.py             # JPL SBDB sb_ident API wrapper
+├── LCS_nonoverlapping_grid.csv     # Low-cadence survey field centres (29 fields)
+├── midplane_20{19,22}_ultrasat_cadence.npy  # Cadence arrays (not yet used)
+├── comet_testbench/                # Comet search + aperture photometry + hand-off
+├── oh_h2o_model/                   # OH -> H2O package (GPL-3.0), own pyproject and tests
+├── mission_parameters/             # Versioned instrument parameter files (JSON)
+├── future_tests.md                 # Tests to run as ULTRASAT parameters arrive
+├── examples/                       # Test bench configs
+└── tests/                          # Simulator + test bench tests
 ```
 
 ---
 
-## File Structure
+# Observability simulator
 
-```
-ultrasat-observability/
-├── sbdb_ident_query.py             # JPL SBDB API wrapper (param building, HTTP requests)
-├── ultrasat_object_search.py       # Main simulation engine (FOV grids, loop, post-processing, plots)
-├── LCS_nonoverlapping_grid.csv     # Pre-computed low-cadence survey field centers (29 fields)
-├── midplane_2019_ultrasat_cadence.npy  # 2019 observing cadence data
-├── midplane_2022_ultrasat_cadence.npy  # 2022 observing cadence data
-└── ultrasat_comets_galactic_2025.png   # Example output visualization
-```
-
----
+UltraSat is a UV space telescope in geostationary orbit (~35,785 km altitude),
+modelled here with a 20° × 10° (RA × Dec) field of view. The simulator
+generates a grid of FOV centres, queries JPL sb_ident for comets and NEOs in
+each, applies pointing constraints (Galactic latitude, solar elongation, lunar
+separation) and plots cumulative detection maps. Supported classes: JFc, ETc,
+HTC, PAR, HYP, COM.
 
 ## Usage
 
@@ -153,7 +189,7 @@ Observer location (hardcoded in `api_query()`):
 
 ---
 
-## Comet test bench (`comet_testbench/`)
+# Comet test bench (`comet_testbench/`)
 
 A test bench for the OH cometary pipeline using public Swift/UVOT images. It is
 instrument- and filter-agnostic: anything with a celestial WCS, an observation
@@ -183,7 +219,7 @@ What it does, per image extension:
    separately developed OH/H2O package, which reads this file with
    `astropy.table.Table.read(path)` (or any CSV reader that skips `#` lines).
 
-### Same search for simulated pointings and real images
+## Same search for simulated pointings and real images
 
 `comet_testbench/pointing.py` turns a field-of-regard pointing into a *virtual
 frame*: a WCS built from the pointing centre, roll and the 20° × 10° field the
@@ -214,7 +250,7 @@ The UltraSat observer defaults to the simulator's site (35,785 km above
 | Sun / Moon / latitude cuts | applied, rows dropped | reported as flags per comet |
 | JPL rate limiting | loop stops | waits for `Retry-After` and retries |
 
-### Quick start
+## Quick start
 
 ```bash
 pip install -e .[test]
@@ -231,13 +267,13 @@ Outputs: `comets.csv` (one row per comet per frame, with geometry, trail length
 and growth-curve status), `fixed_apertures.csv`, `growth_curves.csv`, and the hand-off
 files in `handoff/` (skip them with `--no-handoff`).
 
-### Tests
+## Tests
 
 `pytest` runs the offline suite on synthetic comet images. `pytest -m network`
 runs the live checks on real Swift frames (below); downloads are cached in
 `$COMET_BENCH_CACHE` (default `data/swift`, about 150 MB).
 
-### Benchmarks
+## Benchmarks
 
 The benchmarks check that the search and photometry carry over from the
 field-of-regard simulations to real images. The metrics live in
@@ -262,7 +298,7 @@ the hand-off file, refuses unknown schemas, missing columns and missing units,
 and pairs each OH-band image with the nearest continuum image. Its "model" is a
 fixed continuum scale, so it tests the interface and nothing else.
 
-### Caveats
+## Caveats
 
 - UVOT zero points and flux factors in `instruments.py` are from Poole et al.
   (2008) / Breeveld et al. (2011); verify against the current CALDB.
@@ -278,3 +314,18 @@ fixed continuum scale, so it tests the interface and nothing else.
 - Swift target names are not always reliable: two archive visits labelled
   `COMET41P` (obsids 00093389002/003) point at the Galactic Centre, and the bench
   correctly reports no comet in them.
+
+---
+
+# OH → H2O model (`oh_h2o_model/`)
+
+Reads the hand-off file and returns, for every OH-band aperture: the paired
+continuum rate at the same km radius, β, the OH count rate, OH flux, number
+of OH molecules, and Q(H2O) (aperture-matched and whole-coma), all with 1σ
+errors. The physics comes from swift_comet_pipeline. Only β and the OH flux
+factor depend on the instrument, and they come from the mission parameter
+file. Full details, the step-by-step mapping to swift_comet_pipeline
+functions, and its known quirks are in
+[`oh_h2o_model/README.md`](oh_h2o_model/README.md).
+
+

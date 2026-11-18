@@ -208,3 +208,64 @@ def test_end_to_end_from_test_bench(configured, tmp_path):
     assert len(res) > 0
     assert set(res["aperture_kind"]) <= {"fixed", "iterative"}
     assert np.all(np.isfinite(res["q_h2o"]))
+
+
+# ---------------------------------------------------------------- mission parameter files
+
+MISSION_DIR = Path(__file__).resolve().parents[2] / "mission_parameters"
+
+
+def test_mission_files_are_valid():
+    for f in sorted(MISSION_DIR.glob("*.json")):
+        mp = oh_h2o.load_mission_parameters(f)
+        assert mp.version and mp.parameters
+
+
+def test_ultrasat_calibration_reports_what_is_tbd():
+    mp = oh_h2o.load_mission_parameters(MISSION_DIR / "ultrasat.json")
+    assert mp.value("pixel_scale") == 5.4
+    with pytest.raises(oh_h2o.MissionParameterError, match="beta.*oh_flux_per_count_rate"):
+        oh_h2o.calibration_from_mission(mp)
+
+
+def test_filled_mission_file_gives_fixed_calibration(tmp_path, configured):
+    import json
+
+    d = json.loads((MISSION_DIR / "ultrasat.json").read_text())
+    p = d["parameters"]
+    for k, v in (("oh_band", "OH"), ("continuum_band", "CONT"), ("beta", 0.25),
+                 ("beta_reddening_slope", -0.01), ("oh_flux_per_count_rate", 2e-12)):
+        p[k].update(value=v, status="nominal")
+    d["version"] = "0.2.0"
+    d["changelog"].append({"version": "0.2.0", "date": "2026-11-18", "notes": "test"})
+    f = tmp_path / "ultrasat.json"
+    f.write_text(json.dumps(d))
+    cal = oh_h2o.calibration_from_mission(f)
+    assert cal.beta(0) == pytest.approx(0.25) and cal.beta(10) == pytest.approx(0.225)
+    res = oh_h2o.run(_handoff(oh_filter="OH", cont_filter="CONT", instrument="ULTRASAT"), cal)
+    assert res.meta["mission_parameters"] == "ULTRASAT parameters v0.2.0"
+
+
+def test_swift_mission_file_uses_scp(configured):
+    cal = oh_h2o.calibration_from_mission(MISSION_DIR / "swift_uvot.json")
+    assert isinstance(cal, oh_h2o.SwiftUVOTCalibration)
+    mp = oh_h2o.load_mission_parameters(MISSION_DIR / "swift_uvot.json")
+    # The reference numbers in the file agree with what swift_comet_pipeline computes.
+    assert cal.beta(0) == pytest.approx(mp.value("beta"), rel=1e-3)
+    assert cal.oh_flux_per_count_rate() == pytest.approx(mp.value("oh_flux_per_count_rate"))
+
+
+def test_mission_file_validation(tmp_path):
+    import json
+
+    d = json.loads((MISSION_DIR / "ultrasat.json").read_text())
+    d["version"] = "0.3.0"  # no changelog entry
+    f = tmp_path / "bad.json"
+    f.write_text(json.dumps(d))
+    with pytest.raises(oh_h2o.MissionParameterError, match="changelog"):
+        oh_h2o.load_mission_parameters(f)
+    d = json.loads((MISSION_DIR / "ultrasat.json").read_text())
+    d["parameters"]["beta"]["status"] = "nominal"  # null value must be TBD
+    f.write_text(json.dumps(d))
+    with pytest.raises(oh_h2o.MissionParameterError, match="beta"):
+        oh_h2o.load_mission_parameters(f)

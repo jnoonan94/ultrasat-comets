@@ -1,0 +1,70 @@
+{
+  "schema": "ultrasat-mission-parameters/1",
+  "mission": "ULTRASAT",
+  "version": "0.1.0",
+  "updated": "2026-11-18",
+  "instrument_match": ["ULTRASAT"],
+  "calibration_source": "this_file",
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "date": "2026-11-18",
+      "notes": "First version. Geometry copied from the field-of-regard simulator; OH calibration not yet known."
+    }
+  ],
+  "parameters": {
+    "pixel_scale": {
+      "value": 5.4, "unit": "arcsec/pix", "status": "nominal",
+      "source": "Plate-scale audit 2026-11-18; confirm against the flight WCS"
+    },
+    "field_of_view": {
+      "value": [20.0, 10.0], "unit": "deg", "status": "simulator",
+      "source": "ultrasat_object_search.py ultrasat_fov (RA x Dec box)"
+    },
+    "observer_site": {
+      "value": {"lat_deg": 32.02814, "lon_deg": 34.89832, "alt_km": 35785.0},
+      "status": "simulator",
+      "source": "ultrasat_object_search.api_query; replace with a Horizons spacecraft ID once one exists"
+    },
+    "horizons_id": {
+      "value": null, "status": "TBD",
+      "source": "JPL Horizons, after launch"
+    },
+    "bandpass": {
+      "value": [230.0, 290.0], "unit": "nm", "status": "unconfirmed",
+      "source": "Public mission description (Shvartzvald et al. 2024); needs the measured throughput curve. OH (0-0) emission is at ~309 nm, so check the red edge and out-of-band response."
+    },
+    "throughput_curve": {
+      "value": null, "status": "TBD",
+      "source": "Effective area vs wavelength, needed to compute beta and the OH flux factor"
+    },
+    "oh_band": {
+      "value": null, "status": "TBD",
+      "source": "Filter name (FITS FILTER keyword) of the band used for OH"
+    },
+    "continuum_band": {
+      "value": null, "status": "TBD",
+      "source": "Filter name of the dust continuum band, or the method used if ULTRASAT has a single band"
+    },
+    "beta": {
+      "value": null, "status": "TBD",
+      "source": "Continuum scale: OH-band count rate per continuum-band count rate for solar-colour dust"
+    },
+    "beta_reddening_slope": {
+      "value": null, "unit": "per (%/100 nm)", "status": "TBD",
+      "source": "d(beta)/d(redness); beta(redness) = beta * (1 + slope * redness)"
+    },
+    "oh_flux_per_count_rate": {
+      "value": null, "unit": "erg cm-2 s-1 per ct s-1", "status": "TBD",
+      "source": "OH emission spectrum convolved with the OH-band throughput"
+    },
+    "gain": {
+      "value": null, "unit": "e-/ADU", "status": "TBD",
+      "source": "Detector characterisation"
+    },
+    "read_noise": {
+      "value": null, "unit": "e-", "status": "TBD",
+      "source": "Detector characterisation"
+    }
+  }
+}

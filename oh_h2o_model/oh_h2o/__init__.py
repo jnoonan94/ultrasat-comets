@@ -20,6 +20,12 @@ from .calibration import (  # noqa: E402
     SwiftUVOTCalibration,
     calibration_for,
 )
+from .mission import (  # noqa: E402
+    MissionParameterError,
+    MissionParameters,
+    calibration_from_mission,
+    load_mission_parameters,
+)
 from .model import (  # noqa: E402
     ContractError,
     continuum_at_radius,
@@ -42,5 +48,6 @@ __all__ = [
     "configure", "settings", "OHCalibration", "SwiftUVOTCalibration", "FixedCalibration",
     "calibration_for", "ContractError", "load_handoff", "pair_frames", "continuum_at_radius",
     "run", "write_results", "Geometry", "continuum_subtract", "oh_flux", "oh_molecules",
-    "q_h2o_in_aperture", "q_h2o_total", "g_factor_1au",
+    "q_h2o_in_aperture", "q_h2o_total", "g_factor_1au", "MissionParameters",
+    "MissionParameterError", "load_mission_parameters", "calibration_from_mission",
 ]

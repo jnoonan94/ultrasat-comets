@@ -3,13 +3,15 @@
 import argparse
 from pathlib import Path
 
-from . import calibration_for, configure, run, write_results
+from . import calibration_for, calibration_from_mission, configure, run, write_results
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m oh_h2o", description=__doc__)
     p.add_argument("handoff", nargs="+", help="test bench hand-off ECSV file(s)")
     p.add_argument("--instrument", default="swift-uvot")
+    p.add_argument("--mission", default=None,
+                   help="mission parameter JSON (e.g. mission_parameters/ultrasat.json); overrides --instrument")
     p.add_argument("--oh-band", default=None, help="default: the calibration's (UVW1 for Swift)")
     p.add_argument("--continuum-band", default=None, help="default: the calibration's (V for Swift)")
     p.add_argument("--redness", type=float, nargs="+", default=[0.0], help="dust reddening, %%/100 nm")
@@ -22,7 +24,10 @@ def main(argv=None):
     a = p.parse_args(argv)
 
     configure(data_dir=a.data_dir, cache_dir=a.cache_dir, quality=a.quality, backend=a.backend)
-    cal = calibration_for(a.instrument, a.oh_band, a.continuum_band)
+    if a.mission:
+        cal = calibration_from_mission(a.mission)
+    else:
+        cal = calibration_for(a.instrument, a.oh_band, a.continuum_band)
     for h in a.handoff:
         t = run(h, cal, dust_redness=a.redness, max_dt_minutes=a.max_dt)
         name = Path(h).name.replace("_photometry.ecsv", "") + "_water.ecsv"
