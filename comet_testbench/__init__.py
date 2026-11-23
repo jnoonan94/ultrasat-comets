@@ -12,6 +12,7 @@ from .ephemeris import (ObservingGeometry, SbIdentRecord, normalize_designation,
                         sb_ident_comets, sb_ident_query)
 from .instruments import InstrumentAdapter, SwiftUVOT, UltraSat, ZTF, adapter_for
 from .field_search import CometInField, find_comets
+from .known_comets import EphemerisCache, candidate_comets
 from .photometry import (ApertureResult, Background, GrowthCurve, estimate_background,
                          fixed_aperture_photometry, iterative_aperture_photometry, recenter)
 from .oh import SCHEMA as HANDOFF_SCHEMA, handoff_table, read_handoff, write_handoff

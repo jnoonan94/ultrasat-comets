@@ -59,6 +59,49 @@ placement, with no candidate list and no header OBJECT.
 - When named, Horizons put every comet on the right pixels. The cases above
   are discovery failures, not ephemeris errors.
 
+#### Why sb_ident misses them, and the fix (added in this PR)
+
+- **Fast movers:** sb_ident's first pass places fast movers too roughly
+  (260P at 107"/h needed a box of about 5 deg), but its second-pass positions
+  are accurate. `find_comets` now defaults to `sb_ident_margin_deg=5.0`. It
+  drops any sb_ident record whose second-pass position is more than 0.2 deg
+  off the frame before calling Horizons, so the wider box doesn't add Horizons
+  calls.
+- **Stale orbits:** sb_ident propagates the orbit solution stored in the
+  SBDB, and for some comets that solution belongs to an earlier apparition.
+  67P's has its perihelion in 2015, and 62P's in 2017. Near the next
+  perihelion, sb_ident then returns nothing. It does return 67P in June 2022,
+  when the comet was at 2.6 au.
+- **Second source:** the new `comet_testbench/known_comets.py` gives
+  `find_comets` a second, independent candidate source.
+  - `candidate_comets` takes comets from the SBDB query API with q < 5 au and
+    a perihelion within 2 yr. For periodic comets, it steps perihelion times
+    by the period, because the stored `tp` can be stale.
+  - `EphemerisCache.build` fetches one Horizons track per comet (daily grid)
+    for the observing period.
+  - `in_frame` interpolates every track to each frame's time.
+  - Pass the cache as `find_comets(..., known=cache)`. `CometInField.found_by`
+    records which sources found each comet (for example
+    `sb_ident+ephemeris cache`), so a comet that only one source finds shows
+    up.
+- **Cost:** about 520 to 600 candidates per month for the ZTF epochs. Building
+  all 9 monthly caches took about 15 minutes with 4 parallel Horizons
+  requests.
+  JSON `save`/`load` lets a campaign build it once.
+
+**Re-run of the 9 missed frames** (`rerun_missed.py`, results in
+[`results/rerun_missed.csv`](results/rerun_missed.csv)):
+
+| comet | frames | found by |
+|---|---|---|
+| 260P | 4 / 4 | sb_ident (5 deg box) + cache |
+| 4P | 2 / 2 | sb_ident (5 deg box) + cache |
+| 67P | 2 / 2 | cache only |
+| 62P | 1 / 1 | cache only |
+
+All 9 are found, so blind recovery is now **58 / 58**. Their 9 paired
+controls still show no comet.
+
 ### 2. Position accuracy
 
 These are the 56 comet frames with SNR of 10 or more in a 10" box.
@@ -138,13 +181,9 @@ the coma. At ULTRASAT's 5.4"/px this gets worse; see the plate-scale audit.
 - `ApertureResult.coverage` correctly flagged the apertures that ran off the
   frame.
 
-## Suggested changes (not made here)
+## Suggested changes
 
-1. **Field search:**
-   - Query sb_ident with a margin of at least 2 deg and let the existing
-     pixel test trim the result.
-   - Also pass a candidate list of known active comets for the epoch, checked
-     with Horizons, since sb_ident can omit a bright comet (67P).
+1. **Field search:** done in this PR (5 deg default margin + `EphemerisCache`).
 2. **Detection gate:** before photometry is handed off, require something like
    SNR of 5 or more in a small fixed aperture, with the centroid within a few
    arcsec of the prediction. Record failures as non-detections, not fluxes.
@@ -164,7 +203,11 @@ python examples/ztf_aperture_test/select_frames.py frames.csv   # Horizons + IRS
 python examples/ztf_aperture_test/download_frames.py frames.csv raw/   # ~38 MB per frame
 python examples/ztf_aperture_test/run_bench.py frames.csv raw/ out/    # ~45 s per frame (two sb_ident calls)
 python examples/ztf_aperture_test/analyze.py frames.csv out/results.jsonl analysis/
+python examples/ztf_aperture_test/rerun_missed.py frames.csv out/results.jsonl raw/ rerun.csv  # fixed field search
 ```
+
+The main run (`run_bench.py`) predates the fix. Its "default margin" column
+used 0.1 deg.
 
 Network access is needed to `irsa.ipac.caltech.edu`, `ssd.jpl.nasa.gov` and
 `ssd-api.jpl.nasa.gov`. IRSA answers more than about 2 parallel downloads with
