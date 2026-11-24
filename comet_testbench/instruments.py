@@ -197,7 +197,48 @@ class UltraSat(InstrumentAdapter):
         return self.site
 
 
-DEFAULT_ADAPTERS = (SwiftUVOT(), UltraSat())
+ZTF_MPC_CODE = "I41"  # Palomar Mountain--ZTF
+
+
+class ZTF(InstrumentAdapter):
+    """ZTF science images (``*_sciimg.fits``).
+
+    * Observer is Palomar (MPC I41) for both Horizons and sb_ident. Using the
+      geocentre instead puts a comet at 0.1 au about 1 arcmin off.
+    * Pixels are DN; the count rate is DN / EXPOSURE.
+    * ``MAGZP`` is the zero point for DN in the whole exposure, so the zero
+      point for 1 DN/s is ``MAGZP + 2.5 log10(EXPOSURE)``. It is calibrated on
+      PS1 stars in the ZTF filter (no colour term), so comet magnitudes are
+      approximate.
+    """
+
+    name = "ztf"
+
+    def __init__(self):
+        super().__init__(observer=f"{ZTF_MPC_CODE}@399", mpc_code=ZTF_MPC_CODE)
+
+    def matches(self, frame: ImageFrame) -> bool:
+        return "ZWICKY" in str(frame.header.get("ORIGIN", "")).upper() or \
+            str(frame.header.get("INSTRUME", "")).upper().startswith("ZTF")
+
+    def count_rate_image(self, frame: ImageFrame) -> np.ndarray:
+        rate = frame.data / frame.exposure
+        sat = frame.header.get("SATURATE")
+        if sat is not None:
+            rate = np.where(frame.data >= float(sat), np.nan, rate)
+        return rate
+
+    def zero_point(self, frame: ImageFrame) -> Optional[float]:
+        zp = frame.header.get("MAGZP")
+        if zp is None or not np.isfinite(frame.exposure) or frame.exposure <= 0:
+            return None
+        return float(zp) + 2.5 * np.log10(frame.exposure)
+
+    def flux_conversion(self, frame):
+        return None
+
+
+DEFAULT_ADAPTERS = (SwiftUVOT(), UltraSat(), ZTF())
 
 
 def adapter_for(frame: ImageFrame, adapters=DEFAULT_ADAPTERS) -> InstrumentAdapter:

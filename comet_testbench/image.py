@@ -89,6 +89,14 @@ def _header_time(header: fits.Header) -> Optional[Time]:
         return Time(str(val).replace(" ", "T"), format="isot", scale=scale)
 
     start = _t("DATE-OBS") if "DATE-OBS" in header else _t("MJD-OBS") if "MJD-OBS" in header else None
+    if start is None and "SHUTOPEN" in header and "SHUTCLSD" in header:
+        # Shutter open/close times (e.g. ZTF, which has no DATE-OBS).
+        t0, t1 = _t("SHUTOPEN"), _t("SHUTCLSD")
+        return t0 + (t1 - t0) / 2
+    if start is None and "OBSMJD" in header:
+        start = Time(float(header["OBSMJD"]), format="mjd", scale=scale)
+    elif start is None and "OBSJD" in header:
+        start = Time(float(header["OBSJD"]), format="jd", scale=scale)
     if "MJD-AVG" in header:
         return _t("MJD-AVG")
     if "DATE-AVG" in header:

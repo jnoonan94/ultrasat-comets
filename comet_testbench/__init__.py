@@ -4,14 +4,15 @@ Instrument-agnostic tools to (a) find comets in an image from its WCS,
 (b) measure coma flux in fixed and iterative apertures, and (c) hand the
 photometry and geometry to the separately developed OH/H2O package as a
 plain-text ECSV file.
-Swift/UVOT is the first supported public dataset.
+Swift/UVOT and ZTF are the supported public datasets.
 """
 
 from .image import ImageFrame, iter_frames, load_frames
 from .ephemeris import (ObservingGeometry, SbIdentRecord, normalize_designation, query_horizons,
                         sb_ident_comets, sb_ident_query)
-from .instruments import InstrumentAdapter, SwiftUVOT, UltraSat, adapter_for
+from .instruments import InstrumentAdapter, SwiftUVOT, UltraSat, ZTF, adapter_for
 from .field_search import CometInField, find_comets
+from .known_comets import EphemerisCache, candidate_comets
 from .photometry import (ApertureResult, Background, GrowthCurve, estimate_background,
                          fixed_aperture_photometry, iterative_aperture_photometry, recenter)
 from .oh import SCHEMA as HANDOFF_SCHEMA, handoff_table, read_handoff, write_handoff

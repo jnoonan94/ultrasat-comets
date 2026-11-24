@@ -1,0 +1,19 @@
+kind,target,stem,target_found,found_by,all_found
+comet,260P,ztf_20190801440741_000449_zg_c06_o_q4,True,sb_ident+ephemeris cache,260P[sb_ident+ephemeris cache]
+comet,260P,ztf_20190811501759_001496_zr_c09_o_q4,True,sb_ident+ephemeris cache,260P[sb_ident+ephemeris cache]
+comet,260P,ztf_20190806418611_000450_zi_c12_o_q2,True,sb_ident+ephemeris cache,260P[sb_ident+ephemeris cache]
+comet,260P,ztf_20190831454803_001600_zg_c05_o_q4,True,sb_ident+ephemeris cache,260P[sb_ident+ephemeris cache]
+comet,4P,ztf_20210918466458_000561_zg_c05_o_q3,True,sb_ident+ephemeris cache,4P[sb_ident+ephemeris cache]
+comet,4P,ztf_20211013442535_000512_zg_c13_o_q4,True,sb_ident+ephemeris cache,4P[sb_ident+ephemeris cache]
+comet,67P,ztf_20211106508067_000615_zg_c10_o_q3,True,ephemeris cache,67P[ephemeris cache]
+comet,67P,ztf_20211112520949_000616_zi_c11_o_q3,True,ephemeris cache,67P[ephemeris cache]
+comet,62P,ztf_20231213462164_000572_zg_c03_o_q2,True,ephemeris cache,62P[ephemeris cache]
+control,260P,ztf_20190822404896_000449_zg_c06_o_q4,False,,
+control,260P,ztf_20190919376435_001496_zr_c09_o_q4,False,,
+control,260P,ztf_20190830302442_000450_zi_c12_o_q2,False,,
+control,260P,ztf_20190923377847_001600_zg_c05_o_q4,False,,
+control,4P,ztf_20211009392500_000561_zg_c05_o_q3,False,,
+control,4P,ztf_20211103340741_000512_zg_c13_o_q4,False,,
+control,67P,ztf_20211202305741_000615_zg_c10_o_q3,False,,
+control,67P,ztf_20220218222627_000616_zi_c11_o_q3,False,,
+control,62P,ztf_20240105407882_000572_zg_c03_o_q2,False,,
